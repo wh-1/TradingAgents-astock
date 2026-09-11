@@ -227,7 +227,17 @@ def _render_llm_config() -> None:
             key="quick_model_idx",
             help="用于常规分析任务，速度优先",
         )
-        st.session_state["quick_think_llm"] = quick_values[quick_idx]
+        if quick_values[quick_idx] == "custom":
+            # 与 cli/utils.py 的 _prompt_custom_model_id() 对齐：选 Custom 后
+            # 必须给出真实模型 ID，否则会把字面量 "custom" 发给供应商 API。
+            custom_quick = st.text_input(
+                "快速思考模型 ID（自定义）",
+                key="custom_quick_model",
+                placeholder="例: glm-4.7-flash",
+            )
+            st.session_state["quick_think_llm"] = custom_quick.strip()
+        else:
+            st.session_state["quick_think_llm"] = quick_values[quick_idx]
 
         deep_idx = st.selectbox(
             "深度思考模型",
@@ -236,7 +246,15 @@ def _render_llm_config() -> None:
             key="deep_model_idx",
             help="用于辩论/决策等需要深度推理的任务",
         )
-        st.session_state["deep_think_llm"] = deep_values[deep_idx]
+        if deep_values[deep_idx] == "custom":
+            custom_deep = st.text_input(
+                "深度思考模型 ID（自定义）",
+                key="custom_deep_model",
+                placeholder="例: glm-4.7-flash",
+            )
+            st.session_state["deep_think_llm"] = custom_deep.strip()
+        else:
+            st.session_state["deep_think_llm"] = deep_values[deep_idx]
     else:
         custom_quick = st.text_input("快速思考模型 ID", key="custom_quick_model")
         custom_deep = st.text_input("深度思考模型 ID", key="custom_deep_model")

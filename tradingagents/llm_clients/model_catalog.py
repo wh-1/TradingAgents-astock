@@ -91,6 +91,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
     },
     "glm": {
         "quick": [
+            ("GLM-4.7-Flash - 免费快速模型", "glm-4.7-flash"),
             ("GLM-4.7", "glm-4.7"),
             ("GLM-5", "glm-5"),
             ("Custom model ID", "custom"),
