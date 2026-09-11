@@ -155,6 +155,60 @@ def _build_name_code_map() -> tuple[dict[str, str], dict[str, str]]:
     return _name_to_code, _code_to_name
 
 
+class _SmartboxUnavailable(Exception):
+    """腾讯 smartbox 网络层不可用（可降级 mootdx），区别于「查无此股」。"""
+
+
+def _decode_smartbox_text(text: str) -> str:
+    """smartbox 返回体内的中文是 \\uXXXX 转义，其余为 ASCII，逐段解码。"""
+    return _re.sub(
+        r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), text
+    )
+
+
+def _resolve_name_via_smartbox(clean_name: str) -> str:
+    """按股票名称经腾讯 smartbox 模糊搜索解析 6 位代码。
+
+    mootdx 名称映射依赖 TCP 7709，在部分网络（代理/防火墙）下握手被拒且
+    逐台探测耗时 1-2 分钟；smartbox 走 HTTP 亚秒级返回，故作为首选路径。
+    只抛两种结果：返回 6 位代码，或 ValueError（查无/多义，属确定答案，
+    调用方不应再降级 mootdx）；网络失败抛 _SmartboxUnavailable。
+    """
+    try:
+        r = _requests.get(
+            "https://smartbox.gtimg.cn/s3/",
+            params={"v": "2", "q": clean_name, "t": "all"},
+            headers={"User-Agent": _UA},
+            timeout=10,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        raise _SmartboxUnavailable(f"smartbox 请求失败: {e}") from e
+
+    m = _re.search(r'v_hint="(.*)"', r.text, _re.DOTALL)
+    if not m or not m.group(1).strip():
+        raise _SmartboxUnavailable("smartbox 返回为空")
+
+    a_share: list[tuple[str, str]] = []
+    for entry in m.group(1).split("^"):
+        parts = _decode_smartbox_text(entry).split("~")
+        if len(parts) < 3:
+            continue
+        code, name = parts[1].strip(), parts[2].strip()
+        if _re.match(r"^[036]\d{5}$", code):
+            a_share.append((name.replace(" ", ""), code))
+
+    if not a_share:
+        raise ValueError(f"找不到股票 '{clean_name}'（腾讯搜索无 A 股匹配）")
+    for name, code in a_share:
+        if name == clean_name:
+            return code
+    if len(a_share) == 1:
+        return a_share[0][1]
+    examples = ", ".join(f"{n}({c})" for n, c in a_share[:5])
+    raise ValueError(f"'{clean_name}' 匹配到多只股票: {examples}，请输入完整名称或代码")
+
+
 def resolve_ticker(user_input: str) -> str:
     """Resolve user input (code or Chinese name) to a 6-digit A-stock code.
 
@@ -172,6 +226,14 @@ def resolve_ticker(user_input: str) -> str:
         return _normalize_ticker(s)
 
     clean = s.replace(" ", "").replace("　", "")
+
+    # 首选腾讯 smartbox（HTTP 亚秒级）；mootdx 名称映射兜底（TCP 7709 被
+    # 拦的网络下其逐台探测会阻塞 1-2 分钟，见 _build_name_code_map 注释）。
+    try:
+        return _resolve_name_via_smartbox(clean)
+    except _SmartboxUnavailable:
+        logger.info("smartbox 不可用，降级 mootdx 名称映射")
+
     n2c, _ = _build_name_code_map()
 
     if clean in n2c:

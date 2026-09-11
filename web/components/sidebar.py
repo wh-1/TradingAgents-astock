@@ -389,7 +389,8 @@ def render_sidebar() -> None:
         type="primary",
     ):
         _save_llm_config()  # persist model choice before running
-        resolved_code, err = _resolve_user_input(ticker)
+        with st.spinner("正在解析股票代码..."):
+            resolved_code, err = _resolve_user_input(ticker)
         if err:
             st.error(f"❌ {err}")
         else:
